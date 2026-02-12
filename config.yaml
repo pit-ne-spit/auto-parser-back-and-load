@@ -1,0 +1,50 @@
+# Application Configuration
+
+# Logging settings
+logging:
+  level: INFO  # DEBUG, INFO, WARNING, ERROR
+  format: "[%(levelname)s] %(message)s"
+  file_path: "logs/app.log"
+  rotation:
+    max_bytes: 10485760  # 10 MB
+    backup_count: 5
+  retention_days: 7  # Delete logs older than 7 days
+
+# Batch processing settings
+batch:
+  normalization_size: 200  # Records per batch for normalization
+
+# Retry settings
+retry:
+  max_attempts: 5
+  interval_seconds: 60  # 1 minute between attempts
+  total_timeout_seconds: 600  # 10 minutes total (5 attempts * 1 min + request time)
+  # Test mode settings (for quick testing)
+  test_mode: false
+  test_interval_seconds: 5  # 5 seconds for testing
+  test_max_attempts: 3  # Only 3 attempts for testing
+
+# API request settings
+api:
+  timeout_seconds: 30
+  max_retries: 3
+
+# Rate limiting for public API
+rate_limit:
+  requests_per_minute: 60
+  requests_per_hour: 1000
+
+# Pagination settings
+pagination:
+  default_page_size: 20
+  max_page_size: 100
+
+# CHE168 API settings
+che168:
+  base_url: "https://{access_name}.auto-parser.ru/api/v2/che168"
+  endpoints:
+    filters: "/filters"
+    offers: "/offers"
+    change_id: "/change_id"
+    changes: "/changes"
+    offer: "/offer"
