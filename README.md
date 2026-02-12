@@ -35,6 +35,19 @@ python get_filters.py
   - `filters_reference.json` - структурированный справочник
   - `filters_reference.py` - Python модуль со справочником
 
+## Развёртывание на VPS (Docker)
+
+Проект готов к развёртыванию в Docker-контейнерах:
+
+```bash
+# Клонировать, создать .env из .env.example
+docker compose up -d
+
+# Миграция локальной БД: см. docs/DOCKER_DEPLOYMENT.md
+```
+
+Подробнее: [docs/DOCKER_DEPLOYMENT.md](docs/DOCKER_DEPLOYMENT.md)
+
 ## Структура проекта
 
 ### Основные модули

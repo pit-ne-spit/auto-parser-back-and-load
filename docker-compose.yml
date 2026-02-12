@@ -1,0 +1,48 @@
+# Auto-parser CHE168 - Docker Compose
+# Запуск: docker compose up -d
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: che168_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-che168_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-che168_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    container_name: che168_app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-che168_db}
+      CHE168_API_KEY: ${CHE168_API_KEY}
+      CHE168_ACCESS_NAME: ${CHE168_ACCESS_NAME:-autobase}
+    volumes:
+      - ./logs:/app/logs
+      - ./config.yaml:/app/config.yaml:ro
+    # Контейнер работает постоянно (для cron на хосте)
+    # Entrypoint запускает миграции при старте, затем sleep
+    # Скрипты: docker exec che168_app python scripts/daily_update.py
+    command: ["sleep", "infinity"]
+
+volumes:
+  postgres_data:
+    # Данные PostgreSQL сохраняются между перезапусками

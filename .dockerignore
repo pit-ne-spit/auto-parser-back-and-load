@@ -1,0 +1,64 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+.eggs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment (secrets - use docker-compose env)
+.env
+.env.*
+.env.local
+
+# Logs (mounted as volume)
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.db
+*.sqlite
+*.sqlite3
+
+# Analysis/temp output
+check_*.txt
+check_*.json
+temp_*.json
+*_analysis.txt
+*_output.txt
+translated_*.json
+untranslated_*.txt
+example.txt
+final_analysis.txt
+
+# Local filters (optional)
+filters_full_response.json
+filters_reference.json
+filters_reference.py
+get_filters.py
+
+# Documentation (not needed in container)
+docs/
+*.md
+!README.md
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
