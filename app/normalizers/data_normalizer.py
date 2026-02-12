@@ -3,7 +3,7 @@
 import json
 from datetime import datetime
 from typing import Dict, Any, Optional, List
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.normalizers.base_normalizer import BaseNormalizer
 from app.database.connection import AsyncSessionLocal
@@ -76,8 +76,9 @@ class DataNormalizer(BaseNormalizer):
                 update_interval=1.0
             )
             
-            # Process records in batches
-            offset = 0
+            # Process records in batches using cursor-based pagination
+            # Используем курсор на основе id вместо offset, чтобы не пропускать записи
+            last_processed_id = 0
             while True:
                 # Check if we've reached the limit
                 if limit and stats['total_processed'] >= limit:
@@ -90,12 +91,15 @@ class DataNormalizer(BaseNormalizer):
                     # Process smaller batch for the last iteration
                     original_batch_size = self.batch_size
                     self.batch_size = remaining
-                    batch_stats = await self._process_batch(offset)
+                    batch_stats = await self._process_batch_cursor(last_processed_id)
                     self.batch_size = original_batch_size
                 else:
-                    batch_stats = await self._process_batch(offset)
+                    batch_stats = await self._process_batch_cursor(last_processed_id)
                 
-                if batch_stats['processed'] == 0:
+                # Прерываем цикл только если не было загружено записей (все обработаны)
+                # Если записи были загружены, но не обработаны (валидация/ошибки), продолжаем
+                if batch_stats.get('records_fetched', 0) == 0:
+                    logger.info("No more unprocessed records found, stopping")
                     break
                 
                 stats['total_processed'] += batch_stats['processed']
@@ -107,8 +111,19 @@ class DataNormalizer(BaseNormalizer):
                 # Update progress
                 progress.update(batch_stats['processed'])
                 
-                # Move to next batch
-                offset += self.batch_size
+                # Обновляем курсор на основе id последней обработанной записи
+                # Это гарантирует, что мы не пропустим записи при следующей итерации
+                if batch_stats.get('last_processed_id') and batch_stats['last_processed_id'] > last_processed_id:
+                    # Обновляем курсор только если были успешно обработаны записи
+                    last_processed_id = batch_stats['last_processed_id']
+                elif batch_stats.get('records_fetched', 0) > 0 and batch_stats.get('processed', 0) == 0:
+                    # Если записи были загружены, но ни одна не обработана (валидация/ошибки),
+                    # используем максимальный id из загруженных записей, чтобы не зациклиться
+                    # Но только если max_id больше текущего курсора
+                    max_id = batch_stats.get('max_id', last_processed_id)
+                    if max_id > last_processed_id:
+                        last_processed_id = max_id
+                        logger.debug(f"No records processed in batch, moving cursor to max_id={max_id}")
                 
                 # Log batch completion
                 logger.debug(
@@ -141,38 +156,52 @@ class DataNormalizer(BaseNormalizer):
             await self.finish_operation("ERROR")
             raise
     
-    async def _process_batch(self, offset: int) -> Dict[str, int]:
+    async def _process_batch_cursor(self, last_id: int = 0) -> Dict[str, int]:
         """
-        Process a batch of records.
+        Process a batch of records using cursor-based pagination.
         
         Args:
-            offset: Offset for batch selection
+            last_id: ID последней обработанной записи (курсор)
             
         Returns:
-            Dictionary with batch statistics
+            Dictionary with batch statistics including last_processed_id and max_id
         """
         stats = {
             'processed': 0,
             'created': 0,
             'updated': 0,
-            'errors': 0
+            'errors': 0,
+            'records_fetched': 0,  # Количество загруженных записей из БД
+            'last_processed_id': last_id,  # ID последней успешно обработанной записи
+            'max_id': last_id  # Максимальный ID среди загруженных записей
         }
         
         async with AsyncSessionLocal() as session:
             records = []
             try:
-                # Fetch batch of unprocessed records
+                # Fetch batch of unprocessed records using cursor (id > last_id)
+                # Это гарантирует, что мы не пропустим записи при пагинации
                 result = await session.execute(
                     select(RawData)
-                    .where(RawData.is_processed == False)
+                    .where(
+                        RawData.is_processed == False,
+                        RawData.id > last_id
+                    )
                     .order_by(RawData.id)
                     .limit(self.batch_size)
-                    .offset(offset)
                 )
                 records = result.scalars().all()
+                stats['records_fetched'] = len(records)
+                
+                # Запоминаем максимальный id среди загруженных записей
+                if records:
+                    stats['max_id'] = max(record.id for record in records)
                 
                 if not records:
                     return stats
+                
+                # Отслеживаем успешно обработанные записи для обновления is_processed после коммита
+                successfully_processed_records = []
                 
                 # Process each record in transaction
                 # Обрабатываем каждую запись отдельно, чтобы ошибка в одной не влияла на остальные
@@ -218,9 +247,11 @@ class DataNormalizer(BaseNormalizer):
                             session.add(processed_record)
                             stats['created'] += 1
                         
-                        # Mark raw_record as processed
-                        raw_record.is_processed = True
+                        # Запоминаем успешно обработанную запись (но НЕ помечаем как processed до коммита)
+                        successfully_processed_records.append(raw_record)
                         stats['processed'] += 1
+                        # Обновляем курсор на основе id последней успешно обработанной записи
+                        stats['last_processed_id'] = raw_record.id
                         
                     except Exception as e:
                         # Если ошибка в отдельной записи - логируем и пропускаем её
@@ -237,23 +268,57 @@ class DataNormalizer(BaseNormalizer):
                 # Commit transaction для всех успешно обработанных записей
                 try:
                     await session.commit()
+                    # Только после успешного коммита помечаем записи как обработанные
+                    # Это гарантирует консистентность: если коммит упал, записи останутся необработанными
+                    if successfully_processed_records:
+                        processed_inner_ids = [r.inner_id for r in successfully_processed_records]
+                        try:
+                            await session.execute(
+                                update(RawData)
+                                .where(RawData.inner_id.in_(processed_inner_ids))
+                                .values(is_processed=True)
+                            )
+                            await session.commit()
+                            logger.debug(f"Marked {len(processed_inner_ids)} records as processed")
+                        except Exception as e:
+                            # Если ошибка при обновлении is_processed - логируем, но не откатываем processed_data
+                            # Записи уже сохранены в processed_data, просто не помечены как обработанные
+                            # Они будут обработаны повторно, но это лучше, чем потерять данные
+                            await session.rollback()
+                            self.record_error(e, f"updating is_processed flag for batch starting from id > {last_id}")
+                            logger.warning(
+                                f"Failed to mark records as processed, but processed_data was saved. "
+                                f"Records will be reprocessed: {len(processed_inner_ids)} records"
+                            )
+                            # Сбрасываем статистику, так как is_processed не обновлен
+                            stats['processed'] = 0
+                            stats['created'] = 0
+                            stats['updated'] = 0
+                            stats['last_processed_id'] = last_id  # Не обновляем курсор
+                    
                 except Exception as e:
                     # Если ошибка при коммите - откатываем весь батч
                     await session.rollback()
-                    self.record_error(e, f"commit batch at offset {offset}")
+                    self.record_error(e, f"commit batch starting from id > {last_id}")
                     # Помечаем все записи как необработанные
                     stats['errors'] += len(records)
                     stats['processed'] = 0
                     stats['created'] = 0
                     stats['updated'] = 0
+                    stats['last_processed_id'] = last_id  # Сбрасываем курсор, чтобы повторить попытку
                     
             except Exception as e:
                 # Rollback entire batch on error
-                self.record_error(e, f"batch at offset {offset}")
-                stats['errors'] += len(records)  # Count all records in batch as errors
+                try:
+                    await session.rollback()
+                except:
+                    pass  # Игнорируем ошибки при rollback
+                self.record_error(e, f"batch starting from id > {last_id}")
+                stats['errors'] += len(records) if records else 0  # Count all records in batch as errors
                 stats['processed'] = 0
                 stats['created'] = 0
                 stats['updated'] = 0
+                stats['last_processed_id'] = last_id  # Сбрасываем курсор, чтобы повторить попытку
         
         return stats
     
@@ -408,8 +473,8 @@ class DataNormalizer(BaseNormalizer):
         else:
             normalized['offer_created'] = None
         
-        # Описание
-        normalized['description'] = translate_field(raw_data.get('description')) if raw_data.get('description') else None
+        # Описание (не переводим - сохраняем оригинал)
+        normalized['description'] = raw_data.get('description')
         
         # Объем двигателя
         displacement = raw_data.get('displacement')

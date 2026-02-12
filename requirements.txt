@@ -18,3 +18,10 @@ pydantic-settings==2.1.0
 
 # Configuration
 pyyaml==6.0.1
+
+# Translation (рекомендуется использовать deep-translator)
+deep-translator>=1.11.4
+# Альтернативные варианты (раскомментируйте при необходимости):
+# translators>=6.0.0
+# argostranslate>=1.11.0
+# googletrans==4.0.0rc1  # Старая библиотека, менее стабильная

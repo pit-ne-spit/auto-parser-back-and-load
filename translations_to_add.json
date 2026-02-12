@@ -1,0 +1,16 @@
+{
+  "metadata": {
+    "extracted_at": "2026-02-12T13:40:50.705988",
+    "total_records_analyzed": 197683,
+    "total_untranslated_unique": 10,
+    "already_in_dict_count": 214,
+    "new_translations_count": 0,
+    "min_count_threshold": 1
+  },
+  "translations_by_field": {},
+  "summary_by_priority": {
+    "high": 0,
+    "medium": 0,
+    "low": 0
+  }
+}

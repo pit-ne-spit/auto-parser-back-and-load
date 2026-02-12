@@ -73,7 +73,7 @@ async def analyze_untranslated():
                 ('body_type', record.body_type),
                 ('address', record.address),
                 ('section', record.section),
-                ('description', record.description),
+                # ('description', record.description),  # Не переводим description
                 ('drive_type', record.drive_type),
             ]
             
@@ -130,18 +130,18 @@ async def analyze_untranslated():
         print(f"\nУже есть в словаре: {len(already_in_dict)}")
         print(f"Нужно добавить: {len(new_translations)}")
         
+        # Сортируем по частоте (инициализируем всегда, даже если new_translations пуст)
+        frequency_map = {}
+        for field_name, counter in untranslated_by_field.items():
+            for text, count in counter.items():
+                if text not in TRANSLATIONS_CN_RU:
+                    frequency_map[text] = frequency_map.get(text, 0) + count
+        
+        sorted_by_freq = sorted(frequency_map.items(), key=lambda x: x[1], reverse=True) if frequency_map else []
+        
         if new_translations:
             print("\nТоп-50 самых частых непереведенных текстов для добавления:")
             print("-" * 80)
-            
-            # Сортируем по частоте
-            frequency_map = {}
-            for field_name, counter in untranslated_by_field.items():
-                for text, count in counter.items():
-                    if text not in TRANSLATIONS_CN_RU:
-                        frequency_map[text] = frequency_map.get(text, 0) + count
-            
-            sorted_by_freq = sorted(frequency_map.items(), key=lambda x: x[1], reverse=True)
             
             for i, (text, freq) in enumerate(sorted_by_freq[:50], 1):
                 print(f"{i:2d}. [{freq:3d}x] {text}")
