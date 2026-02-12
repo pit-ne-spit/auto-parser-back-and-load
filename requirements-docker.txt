@@ -1,0 +1,9 @@
+# Минимальные зависимости для Docker (initial_load, daily_update, normalize)
+# Без FastAPI, uvicorn, pydantic — ~35 MB экономии
+
+python-dotenv==1.0.0
+requests==2.31.0
+sqlalchemy[asyncio]==2.0.25
+asyncpg==0.29.0
+alembic==1.13.1
+pyyaml==6.0.1

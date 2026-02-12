@@ -1,26 +1,21 @@
-# Auto-parser CHE168 - Production Dockerfile
+# Auto-parser CHE168 - Production Dockerfile (оптимизирован: ~2 мин вместо 6)
 FROM python:3.11-slim
 
-# Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
 
 WORKDIR /app
 
-# Install system dependencies (postgresql-client for pg_dump/pg_restore if needed)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    postgresql-client \
-    && rm -rf /var/lib/apt/lists/*
+# Только requirements (pg_dump не нужен — бэкапы делают на хосте)
+COPY requirements-docker.txt .
+RUN pip install --no-cache-dir -r requirements-docker.txt
 
-# Copy requirements first for better layer caching
-COPY requirements.txt .
-
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
-COPY . .
+# Код приложения (только нужные файлы — .dockerignore исключает backup, .venv, docs)
+COPY app/ app/
+COPY scripts/ scripts/
+COPY alembic/ alembic/
+COPY alembic.ini config.yaml ./
 
 # Create directories for logs and tmp (used by single_instance lock)
 RUN mkdir -p logs tmp
