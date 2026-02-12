@@ -7,7 +7,7 @@
 ```
 VPS
 ├── Docker Compose
-│   ├── che168_postgres  — PostgreSQL 16 (данные в volume)
+│   ├── che168_postgres  — PostgreSQL 18 (данные в volume)
 │   └── che168_app       — приложение (скрипты, миграции)
 ├── Cron (на хосте)      — ежедневный запуск daily_update
 └── Volumes

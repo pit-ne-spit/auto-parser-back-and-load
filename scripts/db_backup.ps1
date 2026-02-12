@@ -22,8 +22,35 @@ if (Test-Path "$rootDir\.env") {
 $env:PGPASSWORD = $env:DB_PASSWORD
 $outputPath = Join-Path $rootDir $OutputFile
 
+# Поиск pg_dump (может быть не в PATH)
+$pgDump = $null
+if (Get-Command pg_dump -ErrorAction SilentlyContinue) {
+    $pgDump = "pg_dump"
+} else {
+    $pgPaths = @(
+        "C:\Program Files\PostgreSQL\18\bin\pg_dump.exe",
+        "C:\Program Files\PostgreSQL\17\bin\pg_dump.exe",
+        "C:\Program Files\PostgreSQL\16\bin\pg_dump.exe",
+        "C:\Program Files\PostgreSQL\15\bin\pg_dump.exe",
+        "C:\Program Files\PostgreSQL\14\bin\pg_dump.exe"
+    )
+    foreach ($p in $pgPaths) {
+        if (Test-Path $p) {
+            $pgDump = $p
+            break
+        }
+    }
+}
+
+if (-not $pgDump) {
+    Write-Host "pg_dump не найден. Установите PostgreSQL клиент или добавьте bin в PATH:" -ForegroundColor Red
+    Write-Host "  https://www.postgresql.org/download/windows/" -ForegroundColor Yellow
+    Write-Host "  Или: C:\Program Files\PostgreSQL\16\bin\ - в переменную PATH"
+    exit 1
+}
+
 Write-Host "Backing up database $($env:DB_NAME) to $outputPath..."
-pg_dump -h $env:DB_HOST -p $env:DB_PORT -U $env:DB_USER -d $env:DB_NAME -F p -f $outputPath
+& $pgDump -h $env:DB_HOST -p $env:DB_PORT -U $env:DB_USER -d $env:DB_NAME -F p -f $outputPath
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Backup completed: $outputPath"
